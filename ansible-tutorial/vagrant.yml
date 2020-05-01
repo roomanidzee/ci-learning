@@ -1,0 +1,86 @@
+---
+
+- name: Vagrant Launch
+  hosts: all
+  tasks:
+
+    - name: Say Hello
+      debug: msg="Hello Ansible"
+
+    - name: Packages Installation
+      apt: name= state=present
+      become: yes
+      with_items:
+        - g++
+        - git
+        - ntp
+
+    - name: Update System Package Cache
+      apt: update_cache=yes
+      become: yes
+
+    - name: Upgrade System Packages
+      apt: upgrade=full
+      become: yes
+
+    - name: Rebooting
+      command: shutdown -r now removes=/var/run/reboot-required
+      become: yes
+      async: 0
+      poll: 0
+      ignore_errors: true
+      register: restarted
+
+    - name: Waiting for reboot
+      local_action: wait_for host=localhost port=2200 delay=15 state=started
+      become: no
+      when: restarted.changed
+
+    - name: Show a registered variable's contents
+      debug: var=restarted
+
+- name: User creation
+  hosts: all
+  vars:
+    user_username: romanidze
+    user_password: secret_pass_1234
+    user_passfile: ./password.hash
+  tasks:
+
+    - name: Generate User Password file
+      shell: python ./password_hasher.py {{ user_password }} > {{ user_passfile }}
+      args:
+        creates: "{{ user_passfile }}"
+      delegate_to: localhost
+
+    - name: Ensure User is Present
+      user: name={{ user_username }} password={{ lookup('file', user_passfile) }} group=sudo generate_ssh_key=yes shell="/bin/bash" state=present
+      become: yes
+
+- name: Configure the Timezone
+  hosts: all
+  tasks:
+
+    - name: Update Timezone to Europe/Moscow
+      copy: content="Europe/Moscow\n" dest=/etc/timezone owner=root group=root mode=0644
+      become: yes
+      register: timezone
+
+    - name: Reconfigure Timezone Data
+      shell: dpkg-reconfigure -f noninteractive tzdata
+      become: yes
+      when: timezone.changed
+
+- name: Template Work Example
+  hosts: all
+  vars:
+    user_username: romanidze
+    var1: First Paragraph
+    var2: Last Paragraph
+  tasks:
+
+    - name: Launch Simple Template Example
+      template:
+        src: template_example.j2
+        dest: /home/{{ user_username }}/output.txt
+      become: yes
